@@ -45,7 +45,7 @@ class WsImporter
         $this->xml = $this->getXml();
         $this->pdo = $this->getDatabaseConnection();
     }
-    
+
     /**
      * @return SimpleXMLElement
      */
@@ -99,6 +99,7 @@ class WsImporter
             $this->truncateTables();//this is just for testing, remove it if you want to run the script only once.
             $writtenSchedules = 0;
             $networksXml = $this->parseXml($this->xml, self::XML_KEY_NETWORK);
+
             foreach ($networksXml as $network) {
                 $serviceXml = $this->parseXml($network, self::XML_KEY_SERVICE);
                 $this->processService($serviceXml, $writtenSchedules);
@@ -122,6 +123,7 @@ class WsImporter
                 $serviceId = $service['id'];
                 $channel = $this->mysqlSelectQuery(self::TABLE_NAME_SERVICE_LIVE_TV_CHANNEL, 'id',
                     ['WHERE source_id = "%s"', [$serviceId]]);
+
                 if ($channel === false) {
                     continue; // If channel doesn't exist in DB, ignore the data
                 }
@@ -143,43 +145,48 @@ class WsImporter
      */
     private function processEvent($eventXml, $channel, $writtenSchedules)
     {
-        foreach ($eventXml as $event) {
-            $eventId = $event['id'];
-            $eventStart = $event['start_time'];
-            $eventDuration = $event['duration'];
-            $program = $event->language[0]->short_event;
-            $programLanguage = $program['language'];
-            $programTitle = $program['name'];
+        try{
+            foreach ($eventXml as $event) {
+                $eventId = $event['id'];
+                $eventStart = $event['start_time'];
+                $eventDuration = $event['duration'];
+                $program = $event->language[0]->short_event;
+                $programLanguage = $program['language'];
+                $programTitle = $program['name'];
 
-            list($durationSeconds, $startTimestamp) =  $this->timeFormatter($eventStart, $eventDuration);
+                list($durationSeconds, $startTimestamp) =  $this->timeFormatter($eventStart, $eventDuration);
 
-            $dataProgram = [
-                'ext_program_id' => $eventId,
-                'show_type' => self::SHOW_TYPE,
-                'long_title' => $programTitle,
-                'duration' => $durationSeconds,
-                'iso_2_lang' => $programLanguage
-            ];
-            // Write program
-            $this->mysqlInsertQuery(self::TABLE_NAME_SERVICE_LIVE_TV_PROGRAM, $dataProgram);
+                $dataProgram = [
+                    'ext_program_id' => $eventId,
+                    'show_type' => self::SHOW_TYPE,
+                    'long_title' => $programTitle,
+                    'duration' => $durationSeconds,
+                    'iso_2_lang' => $programLanguage
+                ];
+                // Write program
+                $this->mysqlInsertQuery(self::TABLE_NAME_SERVICE_LIVE_TV_PROGRAM, $dataProgram);
 
-            // Fetch inserted program
-            $dbProgram = $this->mysqlSelectQuery(self::TABLE_NAME_SERVICE_LIVE_TV_PROGRAM, 'id',
-                ['WHERE ext_program_id = "%s"', [$eventId]]);
+                // Fetch inserted program
+                $dbProgram = $this->mysqlSelectQuery(self::TABLE_NAME_SERVICE_LIVE_TV_PROGRAM, 'id',
+                    ['WHERE ext_program_id = "%s"', [$eventId]]);
 
-            $dataSchedule = [
-                'ext_schedule_id' => $eventId,
-                'channel_id' => $channel['id'],
-                'start_time' => $startTimestamp,
-                'end_time' => $startTimestamp + $durationSeconds,
-                'run_time' => $durationSeconds,
-                'program_id' => $dbProgram['id']
-            ];
-            // Write schedule event
-            $this->mysqlInsertQuery(self::TABLE_NAME_SERVICE_LIVE_TV_SCHEDULE, $dataSchedule);
-            echo sprintf("Written schedules: %d" . PHP_EOL, $writtenSchedules++);
+                $dataSchedule = [
+                    'ext_schedule_id' => $eventId,
+                    'channel_id' => $channel['id'],
+                    'start_time' => $startTimestamp,
+                    'end_time' => $startTimestamp + $durationSeconds,
+                    'run_time' => $durationSeconds,
+                    'program_id' => $dbProgram['id']
+                ];
+                // Write schedule event
+                $this->mysqlInsertQuery(self::TABLE_NAME_SERVICE_LIVE_TV_SCHEDULE, $dataSchedule);
+                echo sprintf("Written schedules: %d" . PHP_EOL, $writtenSchedules++);
+            }
+        } catch (Exception $e) {
+            // @todo: log exception using logger function logger()
+            echo 'Exception Message: ' . $e->getMessage();
+            die;
         }
-
     }
 
     /**
@@ -208,6 +215,12 @@ class WsImporter
         }
     }
 
+    /**
+     * Use to insert records in database with dynamic parameters.
+     * @param string $table
+     * @param array $data
+     * @return bool
+     */
     public function mysqlInsertQuery($table, $data)
     {
         $column = implode(',', array_keys($data));
@@ -216,7 +229,12 @@ class WsImporter
 
         try {
             $stmt = $this->pdo->prepare("INSERT INTO $table ($column) VALUES ($places)");
-            $stmt->execute($values);
+
+            if($stmt->execute($values)) {
+                return true;
+            }
+
+            return false;
         } catch (Exception $e) {
             // @todo: log exception using logger function logger()
             echo 'Exception Message: ' . $e->getMessage();
@@ -247,11 +265,14 @@ class WsImporter
                     TRUNCATE TABLE `service_livetv_program`;
                     TRUNCATE TABLE `service_livetv_schedule`;"
             );
+
             if (!$this->pdo->query($sql)) {
                 print_r($this->pdo->errorInfo());
                 die;
             }
+            // @todo: log message using logger function logger()
             echo 'All required tables truncated.';
+
             return true;
         } catch (Exception $e) {
             // @todo: log exception using logger function logger()

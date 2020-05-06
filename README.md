@@ -8,7 +8,7 @@
 # Improvments
 1. Conversion of custom PHP script to OOP(class, functions, constructor, etc).
 2. Generic query function to handle queries dynamically. It improves reusability. 
-3. XML parser function. 
+3. XML parser function in case if data format is changed then we have to change the keys accordingly.
 4. Removal of extra unused variables. 
 5. Exception Handling.
 6. XML and PDO loading using constructor and their getters. 
