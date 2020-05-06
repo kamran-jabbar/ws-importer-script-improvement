@@ -14,3 +14,4 @@
 6. XML and PDO loading using constructor and their getters. 
 7. Divide lengthy code to smaller functions for better reusability, maintainability, and unit testing. 
 8. Give code infrastructure to implement the logger(part of todo).
+9. Add PHPdoc and function description so that it is understandable for other devs. 
